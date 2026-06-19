@@ -175,7 +175,7 @@ st.markdown("""
         position: fixed;
         bottom: 0;
         left: 0;
-        width: 5%;
+        width: 100%;
         height: 48px;
         z-index: 999999;
         pointer-events: none;
