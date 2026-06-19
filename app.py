@@ -216,16 +216,35 @@ st.markdown("""
        ============================================================ */
     
     .main-header {
-        font-size: 3.2rem;
-        font-weight: 800;
-        color: #0a0a0a !important;
-        letter-spacing: 2px;
-        margin-bottom: 0.2rem;
-        padding: 0.5rem 0;
-        display: flex;
-        align-items: center;
-        gap: 0.3rem;
-    }
+    font-size: 3.2rem;
+    font-weight: 800;
+    letter-spacing: 2px;
+    margin-bottom: 0.2rem;
+    padding: 0.5rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+
+    /* --- PREMIUM SPACE GRAY METALLIC EFFECT --- */
+    background: linear-gradient(
+        135deg, 
+        #3e4042 0%,   /* Base Space Gray Shadow */
+        #676767 25%,  /* Mid-tone specular highlight */
+        #989898 45%,  /* Bright aluminum light reflection */
+        #4b4b4c 55%,  /* Deep contrast core shadow */
+        #808080 75%,  /* Soft surface shine */
+        #3e4042 100%  /* Final edge shadow */
+    );
+    
+    /* Clips the metallic gradient directly to the text characters */
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    
+    /* Subtle 3D shadow depth to mimic a floating premium bezel */
+    filter: drop-shadow(1px 1px 1px rgba(0, 0, 0, 0.15));
+}
+
     
     .main-header .gear-icon {
         font-style: normal !important;
