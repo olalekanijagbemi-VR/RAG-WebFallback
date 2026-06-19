@@ -1,5 +1,5 @@
 """
-Hybrid Search Module - Bit 2 (FIXED VERSION)
+Hybrid Search Module - Bit 2 (SIMPLIFIED VERSION)
 Combines FAISS (semantic) + BM25 (keyword) for optimal retrieval
 """
 
@@ -10,10 +10,9 @@ import numpy as np
 from typing import List, Tuple, Dict, Any, Optional
 from pathlib import Path
 
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
-
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # BM25 for keyword search
 from rank_bm25 import BM25Okapi
@@ -32,7 +31,7 @@ class HybridSearch:
         """
         print("🔄 Initializing Hybrid Search...")
         
-        # Initialize embeddings
+        # Initialize embeddings - using HuggingFaceEmbeddings
         try:
             self.embeddings = HuggingFaceEmbeddings(
                 model_name=embedding_model,
