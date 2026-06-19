@@ -10,9 +10,10 @@ import numpy as np
 from typing import List, Tuple, Dict, Any, Optional
 from pathlib import Path
 
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+
 
 # BM25 for keyword search
 from rank_bm25 import BM25Okapi
