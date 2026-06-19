@@ -362,7 +362,7 @@ st.markdown("""
     
     .stChatInput input::placeholder {
         color: rgba(0, 0, 0, 0.35) !important;
-        opacity: 0;
+        opacity: 1;
         font-weight: 400;
         font-size: 1rem !important;
         text-shadow: none !important;
