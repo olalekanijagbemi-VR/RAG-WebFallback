@@ -218,7 +218,7 @@ st.markdown("""
     .main-header {
         font-size: 3.2rem;
         font-weight: 800;
-        color: #556b2f !important;
+        color: #cd7f32 !important;
         letter-spacing: 2px;
         margin-bottom: 0.2rem;
         padding: 0.5rem 0;
