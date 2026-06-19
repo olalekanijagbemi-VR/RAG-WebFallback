@@ -386,7 +386,7 @@ st.markdown("""
     section[data-testid="stSidebar"] p,
     section[data-testid="stSidebar"] .stMarkdown,
     section[data-testid="stSidebar"] label {
-        color: #979799 !important;
+        color: #079799 !important;
         text-shadow: 0px 2px 8px rgba(0,0,0,0.9) !important;
     }
 
