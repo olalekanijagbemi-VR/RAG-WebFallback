@@ -127,27 +127,93 @@ st.markdown("""
     }
 
     /* ============================================================
-       BOTTOM BAR - BLACK/THIN (MATCHES TOP BAR)
+       TOP BAR - DARK BLACK (NO WHITE, NO BLUE)
        ============================================================ */
     
-    /* Remove the old bottom bar pseudo-element and use a new one */
-    .stApp .bottom-bar {
-        display: none;
+    header[data-testid="stHeader"] {
+        background: rgba(0,0,0,0.95) !important;
+        backdrop-filter: none !important;
+        border-bottom: 1px solid rgba(255,255,255,0.05) !important;
+        box-shadow: 0px 2px 20px rgba(0,0,0,0.8) !important;
+        height: 48px !important;
+        min-height: 48px !important;
     }
     
-    /* We'll use a different approach - target the Streamlit footer area */
+    .stApp > header {
+        background: rgba(0,0,0,0.95) !important;
+    }
+    
+    .st-emotion-cache-1r6slb0 {
+        background: rgba(0,0,0,0.95) !important;
+    }
+
+    /* ============================================================
+       COMPLETELY REMOVE STREAMLIT FOOTER / BOTTOM BAR
+       ============================================================ */
+
+    /* Hide ALL footer elements */
+    footer, 
+    footer *,
+    .st-emotion-cache-1r6slb0,
+    [data-testid="stFooter"],
+    [data-testid="stBottom"],
+    [data-testid="stStatusWidget"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        position: absolute !important;
+        bottom: -9999px !important;
+    }
+
+    /* Hide the entire bottom area */
+    section[data-testid="stBottom"] {
+        display: none !important;
+    }
+
+    /* Hide the deploy button area */
+    .st-emotion-cache-1r6slb0 {
+        display: none !important;
+    }
+
+    /* Make sure the main content area uses full height */
+    .main {
+        padding-bottom: 0 !important;
+    }
+
+    /* Remove any padding that creates white space */
+    .block-container {
+        padding-bottom: 0 !important;
+    }
+
+    /* Hide MainMenu */
+    #MainMenu {
+        visibility: hidden !important;
+    }
+
     footer {
         visibility: hidden !important;
     }
-    
-    /* Create a custom bottom bar using a div in the app */
-    .custom-bottom-bar {
+
+    .stApp > footer {
+        display: none !important;
+    }
+
+    /* ============================================================
+       CUSTOM BLACK BOTTOM BAR
+       ============================================================ */
+
+    body::after {
+        content: "";
         position: fixed;
         bottom: 0;
         left: 0;
         width: 100%;
         height: 48px;
-        z-index: 9999;
+        z-index: 999999;
         pointer-events: none;
         background: linear-gradient(180deg, 
             #1a1a1a 0%, 
@@ -178,39 +244,6 @@ st.markdown("""
         background-repeat: repeat-x, no-repeat;
         border-top: 2px solid rgba(0,0,0,0.5);
         box-shadow: 0px -2px 10px rgba(0,0,0,0.6);
-    }
-    
-    /* Hide Streamlit's default footer */
-    footer {
-        visibility: hidden !important;
-        height: 0 !important;
-        min-height: 0 !important;
-    }
-    
-    /* Adjust the main container to account for the bottom bar */
-    .main > div {
-        padding-bottom: 60px !important;
-    }
-
-    /* ============================================================
-       TOP BAR - DARK BLACK (NO WHITE, NO BLUE)
-       ============================================================ */
-    
-    header[data-testid="stHeader"] {
-        background: rgba(0,0,0,0.95) !important;
-        backdrop-filter: none !important;
-        border-bottom: 1px solid rgba(255,255,255,0.05) !important;
-        box-shadow: 0px 2px 20px rgba(0,0,0,0.8) !important;
-        height: 48px !important;
-        min-height: 48px !important;
-    }
-    
-    .stApp > header {
-        background: rgba(0,0,0,0.95) !important;
-    }
-    
-    .st-emotion-cache-1r6slb0 {
-        background: rgba(0,0,0,0.95) !important;
     }
 
     /* ============================================================
@@ -591,19 +624,6 @@ st.markdown("""
     
     .st-emotion-cache-12fmjuu {
         background: rgba(0,0,0,0.95) !important;
-    }
-    
-    /* Hide Streamlit footer completely */
-    #MainMenu {
-        visibility: hidden !important;
-    }
-    
-    footer {
-        visibility: hidden !important;
-    }
-    
-    .stApp > footer {
-        display: none !important;
     }
 </style>
 """, unsafe_allow_html=True)
