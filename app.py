@@ -409,7 +409,7 @@ st.markdown("""
     }
     
     .source-box b {
-        color: #0a0a0a !important;
+        color: #999999 !important;
     }
     
     .source-box span {
