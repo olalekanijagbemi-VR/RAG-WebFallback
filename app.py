@@ -30,7 +30,7 @@ st.set_page_config(
 
 # ============================================================
 # APPLE LIQUID GLASS UI - DARK BARS - 3D ITALIC TITLE
-# FIXED: Bottom bar is now BLACK/THIN to match top bar
+# FIXED: Input field restored with Apple Liquid Glass style
 # ============================================================
 st.markdown("""
 <style>
@@ -149,6 +149,7 @@ st.markdown("""
 
     /* ============================================================
        COMPLETELY REMOVE STREAMLIT FOOTER / BOTTOM BAR
+       BUT KEEP CHAT INPUT
        ============================================================ */
 
     /* Hide ALL footer elements */
@@ -179,16 +180,6 @@ st.markdown("""
         display: none !important;
     }
 
-    /* Make sure the main content area uses full height */
-    .main {
-        padding-bottom: 0 !important;
-    }
-
-    /* Remove any padding that creates white space */
-    .block-container {
-        padding-bottom: 0 !important;
-    }
-
     /* Hide MainMenu */
     #MainMenu {
         visibility: hidden !important;
@@ -203,7 +194,7 @@ st.markdown("""
     }
 
     /* ============================================================
-       CUSTOM BLACK BOTTOM BAR
+       CUSTOM BLACK BOTTOM BAR (THIN, MATCHES TOP)
        ============================================================ */
 
     body::after {
@@ -349,33 +340,43 @@ st.markdown("""
     }
 
     /* ============================================================
-       CHAT INPUT - Butter/Dull White Background + Big Black Bold Text
+       CHAT INPUT - APPLE LIQUID GLASS STYLE
        ============================================================ */
     
     .stChatInput > div {
-        background: rgba(245, 240, 230, 0.85) !important;
-        backdrop-filter: blur(10px) !important;
-        -webkit-backdrop-filter: blur(10px) !important;
-        border: 1px solid rgba(200, 190, 180, 0.3) !important;
-        border-radius: 1rem !important;
+        background: rgba(255, 255, 255, 0.12) !important;
+        backdrop-filter: blur(20px) !important;
+        -webkit-backdrop-filter: blur(20px) !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        border-radius: 1.2rem !important;
         box-shadow: 
-            inset 0px 2px 8px rgba(0,0,0,0.06),
-            0px 4px 20px rgba(0,0,0,0.15) !important;
+            0px 4px 24px rgba(0, 0, 0, 0.08),
+            0px 1px 0px rgba(255, 255, 255, 0.3) inset !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .stChatInput > div:focus-within {
+        background: rgba(255, 255, 255, 0.18) !important;
+        border-color: rgba(255, 255, 255, 0.35) !important;
+        box-shadow: 
+            0px 4px 30px rgba(0, 0, 0, 0.12),
+            0px 1px 0px rgba(255, 255, 255, 0.4) inset !important;
     }
     
     .stChatInput input {
         color: #0a0a0a !important;
         background: transparent !important;
-        font-weight: 800 !important;
-        font-size: 1.4rem !important;
-        text-shadow: none !important;
+        font-weight: 700 !important;
+        font-size: 1.2rem !important;
+        text-shadow: 
+            0px 1px 2px rgba(255, 255, 255, 0.1) !important;
         letter-spacing: 0.02em;
         padding: 0.75rem 1rem !important;
     }
     
     .stChatInput input::placeholder {
-        color: #999999 !important;
-        opacity: 0.6;
+        color: rgba(0, 0, 0, 0.4) !important;
+        opacity: 0.7;
         font-weight: 400;
         font-size: 1rem !important;
         text-shadow: none !important;
@@ -624,6 +625,22 @@ st.markdown("""
     
     .st-emotion-cache-12fmjuu {
         background: rgba(0,0,0,0.95) !important;
+    }
+
+    /* ============================================================
+       MAKE SURE CHAT INPUT IS VISIBLE
+       ============================================================ */
+    
+    .stChatInput {
+        position: relative !important;
+        z-index: 99999 !important;
+        margin-bottom: 60px !important;
+        padding: 0 1rem !important;
+    }
+    
+    .stChatInput > div {
+        margin: 0 auto !important;
+        max-width: 800px !important;
     }
 </style>
 """, unsafe_allow_html=True)
