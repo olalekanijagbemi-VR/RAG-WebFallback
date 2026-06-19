@@ -30,7 +30,7 @@ st.set_page_config(
 
 # ============================================================
 # APPLE LIQUID GLASS UI - DARK BARS - 3D ITALIC TITLE
-# FIXED: Input field restored with Apple Liquid Glass style
+# FIXED: Input field visible with Apple Liquid Glass style
 # ============================================================
 st.markdown("""
 <style>
@@ -148,48 +148,21 @@ st.markdown("""
     }
 
     /* ============================================================
-       COMPLETELY REMOVE STREAMLIT FOOTER / BOTTOM BAR
-       BUT KEEP CHAT INPUT
+       HIDE FOOTER ONLY - KEEP CHAT INPUT
        ============================================================ */
 
-    /* Hide ALL footer elements */
-    footer, 
-    footer *,
-    .st-emotion-cache-1r6slb0,
-    [data-testid="stFooter"],
-    [data-testid="stBottom"],
-    [data-testid="stStatusWidget"] {
+    footer {
         display: none !important;
         visibility: hidden !important;
         height: 0 !important;
-        min-height: 0 !important;
-        max-height: 0 !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-        position: absolute !important;
-        bottom: -9999px !important;
     }
-
-    /* Hide the entire bottom area */
-    section[data-testid="stBottom"] {
-        display: none !important;
-    }
-
-    /* Hide the deploy button area */
-    .st-emotion-cache-1r6slb0 {
-        display: none !important;
-    }
-
-    /* Hide MainMenu */
+    
     #MainMenu {
+        display: none !important;
         visibility: hidden !important;
     }
-
-    footer {
-        visibility: hidden !important;
-    }
-
-    .stApp > footer {
+    
+    .st-emotion-cache-1r6slb0 {
         display: none !important;
     }
 
@@ -340,26 +313,38 @@ st.markdown("""
     }
 
     /* ============================================================
-       CHAT INPUT - APPLE LIQUID GLASS STYLE
+       CHAT INPUT - APPLE LIQUID GLASS STYLE (VISIBLE)
        ============================================================ */
     
+    .stChatInput {
+        position: fixed !important;
+        bottom: 60px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        width: 80% !important;
+        max-width: 800px !important;
+        z-index: 999999 !important;
+        padding: 0 !important;
+    }
+    
     .stChatInput > div {
-        background: rgba(255, 255, 255, 0.12) !important;
+        background: rgba(255, 255, 255, 0.15) !important;
         backdrop-filter: blur(20px) !important;
         -webkit-backdrop-filter: blur(20px) !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        border: 1px solid rgba(255, 255, 255, 0.25) !important;
         border-radius: 1.2rem !important;
         box-shadow: 
-            0px 4px 24px rgba(0, 0, 0, 0.08),
+            0px 4px 30px rgba(0, 0, 0, 0.15),
             0px 1px 0px rgba(255, 255, 255, 0.3) inset !important;
         transition: all 0.3s ease !important;
+        padding: 0.25rem !important;
     }
     
     .stChatInput > div:focus-within {
-        background: rgba(255, 255, 255, 0.18) !important;
-        border-color: rgba(255, 255, 255, 0.35) !important;
+        background: rgba(255, 255, 255, 0.22) !important;
+        border-color: rgba(255, 255, 255, 0.4) !important;
         box-shadow: 
-            0px 4px 30px rgba(0, 0, 0, 0.12),
+            0px 4px 40px rgba(0, 0, 0, 0.2),
             0px 1px 0px rgba(255, 255, 255, 0.4) inset !important;
     }
     
@@ -371,12 +356,13 @@ st.markdown("""
         text-shadow: 
             0px 1px 2px rgba(255, 255, 255, 0.1) !important;
         letter-spacing: 0.02em;
-        padding: 0.75rem 1rem !important;
+        padding: 0.75rem 1.2rem !important;
+        height: 56px !important;
     }
     
     .stChatInput input::placeholder {
-        color: rgba(0, 0, 0, 0.4) !important;
-        opacity: 0.7;
+        color: rgba(0, 0, 0, 0.35) !important;
+        opacity: 0.8;
         font-weight: 400;
         font-size: 1rem !important;
         text-shadow: none !important;
@@ -391,6 +377,7 @@ st.markdown("""
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
         border-right: 1px solid rgba(255, 255, 255, 0.06);
+        z-index: 99999 !important;
     }
     
     section[data-testid="stSidebar"] h1,
@@ -625,22 +612,6 @@ st.markdown("""
     
     .st-emotion-cache-12fmjuu {
         background: rgba(0,0,0,0.95) !important;
-    }
-
-    /* ============================================================
-       MAKE SURE CHAT INPUT IS VISIBLE
-       ============================================================ */
-    
-    .stChatInput {
-        position: relative !important;
-        z-index: 99999 !important;
-        margin-bottom: 60px !important;
-        padding: 0 1rem !important;
-    }
-    
-    .stChatInput > div {
-        margin: 0 auto !important;
-        max-width: 800px !important;
     }
 </style>
 """, unsafe_allow_html=True)
