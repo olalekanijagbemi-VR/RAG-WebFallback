@@ -26,9 +26,11 @@ st.set_page_config(
     page_icon="⚙️",
     layout="wide",
     initial_sidebar_state="expanded"
-)# ============================================================
+)
+
+# ============================================================
 # APPLE LIQUID GLASS UI - DARK BARS - 3D ITALIC TITLE
-# FIXED: Input = Light Background + Big Black Bold Text
+# FIXED: Bottom bar is now BLACK/THIN to match top bar
 # ============================================================
 st.markdown("""
 <style>
@@ -125,6 +127,72 @@ st.markdown("""
     }
 
     /* ============================================================
+       BOTTOM BAR - BLACK/THIN (MATCHES TOP BAR)
+       ============================================================ */
+    
+    /* Remove the old bottom bar pseudo-element and use a new one */
+    .stApp .bottom-bar {
+        display: none;
+    }
+    
+    /* We'll use a different approach - target the Streamlit footer area */
+    footer {
+        visibility: hidden !important;
+    }
+    
+    /* Create a custom bottom bar using a div in the app */
+    .custom-bottom-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 48px;
+        z-index: 9999;
+        pointer-events: none;
+        background: linear-gradient(180deg, 
+            #1a1a1a 0%, 
+            #2a2a2a 25%, 
+            #1a1a1a 50%, 
+            #111111 75%, 
+            #0a0a0a 100%
+        );
+        background-image: 
+            radial-gradient(ellipse at 5% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
+            radial-gradient(ellipse at 15% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
+            radial-gradient(ellipse at 25% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
+            radial-gradient(ellipse at 35% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
+            radial-gradient(ellipse at 45% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
+            radial-gradient(ellipse at 55% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
+            radial-gradient(ellipse at 65% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
+            radial-gradient(ellipse at 75% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
+            radial-gradient(ellipse at 85% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
+            radial-gradient(ellipse at 95% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
+            repeating-linear-gradient(90deg, 
+                rgba(0,0,0,0.05) 0px, 
+                rgba(255,255,255,0.02) 1px, 
+                transparent 2px, 
+                transparent 6px
+            );
+        background-blend-mode: overlay, overlay, normal;
+        background-size: auto, cover;
+        background-repeat: repeat-x, no-repeat;
+        border-top: 2px solid rgba(0,0,0,0.5);
+        box-shadow: 0px -2px 10px rgba(0,0,0,0.6);
+    }
+    
+    /* Hide Streamlit's default footer */
+    footer {
+        visibility: hidden !important;
+        height: 0 !important;
+        min-height: 0 !important;
+    }
+    
+    /* Adjust the main container to account for the bottom bar */
+    .main > div {
+        padding-bottom: 60px !important;
+    }
+
+    /* ============================================================
        TOP BAR - DARK BLACK (NO WHITE, NO BLUE)
        ============================================================ */
     
@@ -133,6 +201,8 @@ st.markdown("""
         backdrop-filter: none !important;
         border-bottom: 1px solid rgba(255,255,255,0.05) !important;
         box-shadow: 0px 2px 20px rgba(0,0,0,0.8) !important;
+        height: 48px !important;
+        min-height: 48px !important;
     }
     
     .stApp > header {
@@ -250,7 +320,7 @@ st.markdown("""
        ============================================================ */
     
     .stChatInput > div {
-        background: rgba(245, 240, 230, 0.85) !important;  /* Butter/Dull White */
+        background: rgba(245, 240, 230, 0.85) !important;
         backdrop-filter: blur(10px) !important;
         -webkit-backdrop-filter: blur(10px) !important;
         border: 1px solid rgba(200, 190, 180, 0.3) !important;
@@ -261,7 +331,7 @@ st.markdown("""
     }
     
     .stChatInput input {
-        color: #0a0a0a !important;  /* Deep Black */
+        color: #0a0a0a !important;
         background: transparent !important;
         font-weight: 800 !important;
         font-size: 1.4rem !important;
@@ -521,6 +591,19 @@ st.markdown("""
     
     .st-emotion-cache-12fmjuu {
         background: rgba(0,0,0,0.95) !important;
+    }
+    
+    /* Hide Streamlit footer completely */
+    #MainMenu {
+        visibility: hidden !important;
+    }
+    
+    footer {
+        visibility: hidden !important;
+    }
+    
+    .stApp > footer {
+        display: none !important;
     }
 </style>
 """, unsafe_allow_html=True)
