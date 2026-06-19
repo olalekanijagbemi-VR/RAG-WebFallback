@@ -18,7 +18,7 @@ from langchain_community.document_loaders import (
     CSVLoader
 )
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 class DocumentProcessor:
     """
