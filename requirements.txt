@@ -15,4 +15,5 @@ jieba>=0.42.0
 sentence-transformers>=2.2.0
 transformers>=4.36.0
 huggingface-hub>=0.20.0
-torch>=2.6.0
+torch>=2.0.0
+torchvision>=0.15.0
