@@ -362,7 +362,7 @@ st.markdown("""
     
     .stChatInput input::placeholder {
         color: rgba(0, 0, 0, 0.35) !important;
-        opacity: 1;
+        opacity: 0.8;
         font-weight: 400;
         font-size: 1rem !important;
         text-shadow: none !important;
@@ -386,7 +386,7 @@ st.markdown("""
     section[data-testid="stSidebar"] p,
     section[data-testid="stSidebar"] .stMarkdown,
     section[data-testid="stSidebar"] label {
-        color: #ffffff !important;
+        color: #979799 !important;
         text-shadow: 0px 2px 8px rgba(0,0,0,0.9) !important;
     }
 
