@@ -54,7 +54,7 @@ CHUNK_OVERLAP_TOKENS = 50
 CHARS_PER_TOKEN = 4
 
 EMBED_MODEL = "models/gemini-embedding-001"
-GEN_MODEL = "models/gemini-2.5-flash"
+GEN_MODEL = "models/gemini-3.5-flash"
 
 SEMANTIC_WEIGHT = 0.6
 KEYWORD_WEIGHT = 0.4
