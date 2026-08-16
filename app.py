@@ -1,917 +1,711 @@
 """
-RAG-WebFallback - Main Application (FINAL)
-Multi-Agent RAG System with Web Fallback
-Apple Liquid Glass UI - Dark Bars - 3D Italic Title - Big Bold Input
+RAG_Web_Fallback.py
+========================================================================
+Multi-Agent RAG system with Web Fallback (Google Gemini free tier)
+========================================================================
+
+A single-file Streamlit application that:
+  1. Ingests PDF / TXT / DOCX / CSV documents and chunks them.
+  2. Builds a HYBRID index: scikit-learn NearestNeighbors (semantic) + 
+     Pure Python BM25 (keyword), combined with weighted scoring 
+     (60% semantic / 40% keyword).
+  3. Uses a lightweight "Router Agent" (keyword heuristics) to decide,
+     per query, whether to answer from the DOCUMENT index, the WEB
+     (DuckDuckGo), or BOTH — with an explicit confidence score.
+  4. Falls back to DuckDuckGo web search for time-sensitive / missing
+     information.
+  5. Generates a cited answer with Google Gemini (gemini-2.5-flash).
+
+==========================================================================
+FIX: Pure Python BM25 implementation (no external library dependency)
+==========================================================================
 """
 
 import os
-import sys
-from typing import List, Dict, Any
+import re
+import time
+import logging
+import math
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+from collections import Counter
+
+import numpy as np
+import pandas as pd
 import streamlit as st
+
+# --- Vector / keyword search (Pure Python BM25) ---
+from sklearn.neighbors import NearestNeighbors
+
+# --- Chunking (pure-python, no torch) ---
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# --- Document parsers ---
+import pypdf
+import docx
+
+# --- Env / secrets ---
 from dotenv import load_dotenv
 
-# Load environment
+# --- Gemini SDK ---
+from google import genai
+from google.genai import types
+
+# --- Web fallback ---
+from ddgs import DDGS
+
+
+# ==============================================================================
+# CONFIG
+# ==============================================================================
 load_dotenv()
 
-# Import our modules
-from src.document_processor import DocumentProcessor
-from src.hybrid_search import HybridSearch
-from src.router_agent import RouterAgent
-from src.web_fallback import WebFallback
-from src.answer_generator import AnswerGenerator
-
-# Page configuration
-st.set_page_config(
-    page_title="RAG-WebFallback",
-    page_icon="⚙️",
-    layout="wide",
-    initial_sidebar_state="expanded"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+logger = logging.getLogger("RAG_Web_Fallback")
 
-# ============================================================
-# APPLE LIQUID GLASS UI - DARK BARS - 3D ITALIC TITLE
-# FIXED: Input field visible with Apple Liquid Glass style
-# ============================================================
-st.markdown("""
-<style>
-    /* ============================================================
-       BACKGROUND: High Resolution Reflective Metal at 75% intensity
-       ============================================================ */
-    
-    .stApp {
-        background-color: #4a4a4a;
-        
-        /* High Resolution Metal Texture */
-        background-image: 
-            repeating-linear-gradient(90deg, 
-                rgba(0,0,0,0.02) 0px, 
-                rgba(255,255,255,0.02) 0.5px, 
-                transparent 1px, 
-                transparent 3px,
-                rgba(0,0,0,0.015) 3px,
-                rgba(255,255,255,0.015) 3.5px,
-                transparent 4px,
-                transparent 6px
-            ),
-            repeating-linear-gradient(90deg, 
-                rgba(0,0,0,0.03) 0px, 
-                transparent 2px, 
-                rgba(255,255,255,0.02) 4px, 
-                transparent 6px
-            ),
-            linear-gradient(90deg, 
-                #3a3a3a 0%, 
-                #6a6a6a 25%, 
-                #b0b0b0 40%, 
-                #cccccc 50%, 
-                #b0b0b0 60%, 
-                #6a6a6a 75%, 
-                #3a3a3a 100%
-            );
-            
-        background-blend-mode: overlay, overlay, normal;
-        background-size: cover, cover, cover;
-        background-attachment: fixed;
-    }
+APP_TITLE = "Multi-Agent RAG with Web Fallback"
 
-    /* ============================================================
-       TOP SEAM - Double Width (12px) - Dark
-       ============================================================ */
-    
-    .stApp::before {
-        content: "";
-        position: fixed;
-        top: 10%;
-        left: 0;
-        width: 100%;
-        height: 12px;
-        z-index: 9999;
-        pointer-events: none;
-        background: 
-            linear-gradient(to bottom, 
-                rgba(0,0,0,0.8) 0px, 
-                rgba(0,0,0,0.95) 3px, 
-                rgba(60,50,40,0.4) 4px,
-                rgba(180,170,160,0.3) 5px,
-                rgba(255,255,255,0.6) 6px, 
-                rgba(255,255,255,0.3) 7px,
-                rgba(180,170,160,0.15) 8px,
-                transparent 12px
-            );
-    }
+CHUNK_SIZE_TOKENS = 1500
+CHUNK_OVERLAP_TOKENS = 50
+CHARS_PER_TOKEN = 4
 
-    /* ============================================================
-       BOTTOM SEAM - Double Width (12px) - Dark
-       ============================================================ */
-    
-    .stApp::after {
-        content: "";
-        position: fixed;
-        bottom: 10%;
-        left: 0;
-        width: 100%;
-        height: 12px;
-        z-index: 9999;
-        pointer-events: none;
-        background: 
-            linear-gradient(to bottom, 
-                transparent 0px,
-                rgba(180,170,160,0.15) 4px,
-                rgba(255,255,255,0.3) 5px,
-                rgba(255,255,255,0.6) 6px, 
-                rgba(180,170,160,0.3) 7px,
-                rgba(60,50,40,0.4) 8px,
-                rgba(0,0,0,0.95) 9px, 
-                rgba(0,0,0,0.8) 12px
-            );
-    }
+EMBED_MODEL = "models/gemini-embedding-001"
+GEN_MODEL = "models/gemini-3.5-flash"
 
-    /* ============================================================
-       TOP BAR - DARK BLACK (NO WHITE, NO BLUE)
-       ============================================================ */
-    
-    header[data-testid="stHeader"] {
-        background: rgba(0,0,0,0.95) !important;
-        backdrop-filter: none !important;
-        border-bottom: 1px solid rgba(255,255,255,0.05) !important;
-        box-shadow: 0px 2px 20px rgba(0,0,0,0.8) !important;
-        height: 48px !important;
-        min-height: 48px !important;
-    }
-    
-    .stApp > header {
-        background: rgba(0,0,0,0.95) !important;
-    }
-    
-    .st-emotion-cache-1r6slb0 {
-        background: rgba(0,0,0,0.95) !important;
-    }
+SEMANTIC_WEIGHT = 0.6
+KEYWORD_WEIGHT = 0.4
 
-    /* ============================================================
-       HIDE FOOTER ONLY - KEEP CHAT INPUT
-       ============================================================ */
+TOP_K_DOCS = 5
+WEB_MAX_RESULTS = 5
 
-    footer {
-        display: none !important;
-        visibility: hidden !important;
-        height: 0 !important;
-    }
-    
-    #MainMenu {
-        display: none !important;
-        visibility: hidden !important;
-    }
-    
-    .st-emotion-cache-1r6slb0 {
-        display: none !important;
-    }
+TIME_SENSITIVE_KEYWORDS = [
+    "today", "current", "currently", "latest", "news", "weather", "now",
+    "this week", "this month", "this year", "recent", "recently", "live",
+    "score", "stock price", "price of", "update", "breaking",
+    "right now", "up to date", "real-time", "real time", "forecast",
+    "who won", "what happened", "trending",
+    # General knowledge triggers (add these)
+    "where is", "what is", "who is", "capital of", "population of",
+    "which country", "largest", "smallest", "tallest", "longest",
+    "located in", "located at", "geography", "city", "country",
+    "when was", "how to", "how does", "meaning of",
+]
 
-    /* ============================================================
-       CUSTOM BLACK BOTTOM BAR (THIN, MATCHES TOP)
-       ============================================================ */
+SYSTEM_PROMPT = """You are a precise, careful research assistant.
 
-    body::after {
-        content: "";
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        height: 48px;
-        z-index: 999999;
-        pointer-events: none;
-        background: linear-gradient(180deg, 
-            #1a1a1a 0%, 
-            #2a2a2a 25%, 
-            #1a1a1a 50%, 
-            #111111 75%, 
-            #0a0a0a 100%
-        );
-        background-image: 
-            radial-gradient(ellipse at 5% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
-            radial-gradient(ellipse at 15% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
-            radial-gradient(ellipse at 25% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
-            radial-gradient(ellipse at 35% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
-            radial-gradient(ellipse at 45% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
-            radial-gradient(ellipse at 55% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
-            radial-gradient(ellipse at 65% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
-            radial-gradient(ellipse at 75% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
-            radial-gradient(ellipse at 85% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
-            radial-gradient(ellipse at 95% 50%, rgba(50,50,50,0.4) 2px, rgba(30,30,30,0.2) 3px, transparent 4px),
-            repeating-linear-gradient(90deg, 
-                rgba(0,0,0,0.05) 0px, 
-                rgba(255,255,255,0.02) 1px, 
-                transparent 2px, 
-                transparent 6px
-            );
-        background-blend-mode: overlay, overlay, normal;
-        background-size: auto, cover;
-        background-repeat: repeat-x, no-repeat;
-        border-top: 2px solid rgba(0,0,0,0.5);
-        box-shadow: 0px -2px 10px rgba(0,0,0,0.6);
-    }
+Rules:
+1. Only use information contained in the SOURCES provided below.
+2. Cite every factual claim using the matching [Source X] notation.
+3. If the sources do not contain enough information to answer confidently,
+   say so plainly instead of guessing.
+4. If sources conflict, point out the discrepancy rather than picking one silently.
+5. Be concise, well-organized, and use markdown formatting where useful.
+"""
 
-    /* ============================================================
-       MAIN TITLE - 3D Effect, Shadow, Slightly Italic
-       Gear Icon stays STRAIGHT (not italic)
-       ============================================================ */
-    
-    .main-header {
-        font-size: 3.2rem;
-        font-weight: 800;
-        color: #979799 !important;
-        letter-spacing: 2px;
-        margin-bottom: 0.2rem;
-        padding: 0.5rem 0;
-        display: flex;
-        align-items: center;
-        gap: 0.3rem;
-    }
-    
-    .main-header .gear-icon {
-        font-style: normal !important;
-        font-weight: 400;
-        display: inline-block;
-        transform: none !important;
-        text-shadow: 
-            0px 2px 4px rgba(0,0,0,0.2),
-            0px 4px 12px rgba(0,0,0,0.15) !important;
-    }
-    
-    .main-header .title-text {
-        font-style: italic !important;
-        text-shadow: 
-            0px 1px 0px rgba(0,0,0,0.1),
-            0px 2px 0px rgba(0,0,0,0.15),
-            0px 3px 0px rgba(0,0,0,0.2),
-            0px 4px 0px rgba(0,0,0,0.25),
-            0px 5px 0px rgba(0,0,0,0.3),
-            0px 6px 0px rgba(0,0,0,0.35),
-            0px 8px 12px rgba(0,0,0,0.5),
-            0px 12px 24px rgba(0,0,0,0.3) !important;
-        transform: skewX(-3deg);
-        display: inline-block;
-    }
-    
-    .sub-header {
-        font-size: 1.1rem;
-        color: #1a1a1a !important;
-        text-shadow: 0px 2px 8px rgba(0,0,0,0.3) !important;
-        margin-bottom: 2rem;
-        opacity: 0.85;
-        font-weight: 500;
-    }
 
-    /* ============================================================
-       RESPONSE TEXT - Very Dark and BOLD
-       ============================================================ */
+# ==============================================================================
+# PURE PYTHON BM25 IMPLEMENTATION (No external library)
+# ==============================================================================
+class PureBM25:
+    """
+    Pure Python BM25 implementation.
+    No external dependencies - works with any Python version.
+    """
     
-    .stChatMessage div, 
-    .stChatMessage p, 
-    .stChatMessage span,
-    .stChatMessage .stMarkdown {
-        color: #0a0a0a !important;
-        font-weight: 700 !important;
-        text-shadow: 
-            0px 1px 2px rgba(255, 255, 255, 0.08),
-            0px 2px 8px rgba(255, 255, 255, 0.03) !important;
-        letter-spacing: 0.01em;
-    }
-    
-    .stChatMessage .stMarkdown p {
-        color: #0a0a0a !important;
-        font-weight: 700 !important;
-    }
-
-    /* ============================================================
-       APPLE LIQUID GLASS - Response Layer
-       ============================================================ */
-    
-    .stChatMessage[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageContent"]:nth-child(1)) {
-        background: rgba(255, 255, 255, 0.15) !important;
-        backdrop-filter: blur(20px) !important;
-        -webkit-backdrop-filter: blur(20px) !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
-        border-radius: 1.2rem !important;
-        padding: 1rem 1.5rem !important;
-        margin: 0.5rem 0 !important;
-        box-shadow: 
-            0px 4px 24px rgba(0, 0, 0, 0.08),
-            0px 1px 0px rgba(255, 255, 255, 0.3) inset !important;
-    }
-    
-    .stChatMessage[data-testid="stChatMessage"]:has(div[data-testid="stChatMessageContent"]:nth-child(2)) {
-        background: rgba(220, 220, 235, 0.12) !important;
-        backdrop-filter: blur(20px) !important;
-        -webkit-backdrop-filter: blur(20px) !important;
-        border: 1px solid rgba(255, 255, 255, 0.15) !important;
-        border-radius: 1.2rem !important;
-        padding: 1rem 1.5rem !important;
-        margin: 0.5rem 0 !important;
-        box-shadow: 
-            0px 4px 24px rgba(0, 0, 0, 0.06),
-            0px 1px 0px rgba(255, 255, 255, 0.2) inset !important;
-    }
-
-    /* ============================================================
-       CHAT INPUT - APPLE LIQUID GLASS STYLE (VISIBLE)
-       ============================================================ */
-    
-    .stChatInput {
-        position: fixed !important;
-        bottom: 60px !important;
-        left: 50% !important;
-        transform: translateX(-50%) !important;
-        width: 80% !important;
-        max-width: 800px !important;
-        z-index: 999999 !important;
-        padding: 0 !important;
-    }
-    
-    .stChatInput > div {
-        background: rgba(255, 255, 255, 0.15) !important;
-        backdrop-filter: blur(20px) !important;
-        -webkit-backdrop-filter: blur(20px) !important;
-        border: 1px solid rgba(255, 255, 255, 0.25) !important;
-        border-radius: 1.2rem !important;
-        box-shadow: 
-            0px 4px 30px rgba(0, 0, 0, 0.15),
-            0px 1px 0px rgba(255, 255, 255, 0.3) inset !important;
-        transition: all 0.3s ease !important;
-        padding: 0.25rem !important;
-    }
-    
-    .stChatInput > div:focus-within {
-        background: rgba(255, 255, 255, 0.22) !important;
-        border-color: rgba(255, 255, 255, 0.4) !important;
-        box-shadow: 
-            0px 4px 40px rgba(0, 0, 0, 0.2),
-            0px 1px 0px rgba(255, 255, 255, 0.4) inset !important;
-    }
-    
-    .stChatInput input {
-        color: #0a0a0a !important;
-        background: transparent !important;
-        font-weight: 700 !important;
-        font-size: 1.2rem !important;
-        text-shadow: 
-            0px 1px 2px rgba(255, 255, 255, 0.1) !important;
-        letter-spacing: 0.02em;
-        padding: 0.75rem 1.2rem !important;
-        height: 56px !important;
-    }
-    
-    .stChatInput input::placeholder {
-        color: rgba(0, 0, 0, 0.35) !important;
-        opacity: 0.8;
-        font-weight: 400;
-        font-size: 1rem !important;
-        text-shadow: none !important;
-    }
-
-    /* ============================================================
-       SIDEBAR - KEEP ORIGINAL (White text, glass effect)
-       ============================================================ */
-    
-    section[data-testid="stSidebar"] {
-        background: rgba(10, 10, 20, 0.7) !important;
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        border-right: 1px solid rgba(255, 255, 255, 0.06);
-        z-index: 99999 !important;
-    }
-    
-    section[data-testid="stSidebar"] h1,
-    section[data-testid="stSidebar"] h2,
-    section[data-testid="stSidebar"] h3,
-    section[data-testid="stSidebar"] p,
-    section[data-testid="stSidebar"] .stMarkdown,
-    section[data-testid="stSidebar"] label {
-        color: #779799 !important;
-        text-shadow: 0px 2px 8px rgba(0,0,0,0.9) !important;
-    }
-
-    /* ============================================================
-       SOURCE BOX - Apple Liquid Glass style
-       ============================================================ */
-    
-    .source-box {
-        background: rgba(255, 255, 255, 0.08) !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
-        padding: 0.6rem 1rem;
-        border-radius: 0.75rem;
-        margin: 0.3rem 0;
-        font-size: 0.9rem;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        color: #0a0a0a !important;
-        text-shadow: none !important;
-        box-shadow: 0px 2px 12px rgba(0,0,0,0.06);
-    }
-    
-    .source-box b {
-        color: #999999 !important;
-    }
-    
-    .source-box span {
-        color: #0a0a0a !important;
-        text-shadow: none !important;
-    }
-
-    /* ============================================================
-       CONFIDENCE COLORS - Deep Bold Colors
-       ============================================================ */
-    
-    .confidence-high {
-        color: #0a6e1a !important;
-        font-weight: 700;
-        text-shadow: none !important;
-    }
-    
-    .confidence-medium {
-        color: #8a6d00 !important;
-        font-weight: 700;
-        text-shadow: none !important;
-    }
-    
-    .confidence-low {
-        color: #8a1a1a !important;
-        font-weight: 700;
-        text-shadow: none !important;
-    }
-
-    /* ============================================================
-       BUTTONS - Dark Matte
-       ============================================================ */
-    
-    .stButton > button {
-        background: linear-gradient(180deg, #2a2a2a, #1a1a1a) !important;
-        border: 1px solid rgba(255,255,255,0.06) !important;
-        color: #ffffff !important;
-        text-shadow: 0px 1px 4px rgba(0,0,0,0.8) !important;
-        border-radius: 0.75rem !important;
-        transition: all 0.2s ease !important;
-        box-shadow: 0px 2px 12px rgba(0,0,0,0.4) !important;
-    }
-    
-    .stButton > button:hover {
-        background: linear-gradient(180deg, #3a3a3a, #2a2a2a) !important;
-        box-shadow: 0px 4px 20px rgba(0,0,0,0.5) !important;
-        transform: translateY(-1px);
-        border-color: rgba(255,255,255,0.12) !important;
-    }
-
-    /* ============================================================
-       EXPANDER - Apple Liquid Glass style
-       ============================================================ */
-    
-    .streamlit-expanderHeader {
-        background: rgba(255, 255, 255, 0.06) !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
-        border-radius: 0.75rem !important;
-        border: 1px solid rgba(255, 255, 255, 0.08) !important;
-        color: #0a0a0a !important;
-        text-shadow: none !important;
-    }
-    
-    .streamlit-expanderContent {
-        background: rgba(255, 255, 255, 0.04) !important;
-        backdrop-filter: blur(8px) !important;
-        -webkit-backdrop-filter: blur(8px) !important;
-        border-radius: 0 0 0.75rem 0.75rem !important;
-        border: 1px solid rgba(255, 255, 255, 0.04) !important;
-        border-top: none !important;
-    }
-
-    /* ============================================================
-       FILE UPLOADER - Apple Liquid Glass style
-       ============================================================ */
-    
-    .stFileUploader > div {
-        background: rgba(255, 255, 255, 0.05) !important;
-        backdrop-filter: blur(8px) !important;
-        -webkit-backdrop-filter: blur(8px) !important;
-        border: 1px dashed rgba(255, 255, 255, 0.1) !important;
-        border-radius: 0.75rem !important;
-        color: #0a0a0a !important;
-    }
-
-    /* ============================================================
-       METRIC CARDS - Apple Liquid Glass style
-       ============================================================ */
-    
-    .stMetric {
-        background: rgba(255, 255, 255, 0.05) !important;
-        backdrop-filter: blur(8px) !important;
-        -webkit-backdrop-filter: blur(8px) !important;
-        border-radius: 0.75rem !important;
-        padding: 0.5rem 1rem !important;
-        border: 1px solid rgba(255, 255, 255, 0.06) !important;
-        box-shadow: 0px 2px 12px rgba(0,0,0,0.06);
-    }
-    
-    .stMetric label {
-        color: #0a0a0a !important;
-        text-shadow: none !important;
-    }
-    
-    .stMetric .stMetricValue {
-        color: #0a0a0a !important;
-        text-shadow: none !important;
-    }
-
-    /* ============================================================
-       DIVIDERS - Subtle
-       ============================================================ */
-    
-    hr {
-        border: none !important;
-        height: 1px !important;
-        background: linear-gradient(90deg, 
-            transparent 0%, 
-            rgba(0, 0, 0, 0.08) 30%, 
-            rgba(0, 0, 0, 0.12) 50%, 
-            rgba(0, 0, 0, 0.08) 70%, 
-            transparent 100%
-        ) !important;
-        margin: 1.5rem 0 !important;
-    }
-
-    /* ============================================================
-       SCROLLBAR - Dark
-       ============================================================ */
-    
-    ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-    }
-    
-    ::-webkit-scrollbar-track {
-        background: rgba(30, 30, 30, 0.4) !important;
-        border-radius: 4px;
-    }
-    
-    ::-webkit-scrollbar-thumb {
-        background: rgba(80, 80, 80, 0.5) !important;
-        border-radius: 4px;
-        border: 1px solid rgba(0, 0, 0, 0.1);
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-        background: rgba(80, 80, 80, 0.7) !important;
-    }
-
-    /* ============================================================
-       ALERT MESSAGES - Apple Liquid Glass style
-       ============================================================ */
-    
-    .stAlert {
-        background: rgba(255, 255, 255, 0.06) !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
-        border: 1px solid rgba(255, 255, 255, 0.08) !important;
-        border-radius: 0.75rem !important;
-        color: #0a0a0a !important;
-        text-shadow: none !important;
-    }
-    
-    .stAlert .stMarkdown,
-    .stAlert div, 
-    .stAlert p, 
-    .stAlert span {
-        color: #0a0a0a !important;
-        text-shadow: none !important;
-    }
-
-    /* ============================================================
-       LINKS - Deep Black
-       ============================================================ */
-    
-    .stMarkdown a {
-        color: #0a0a0a !important;
-        text-decoration: underline;
-        text-underline-offset: 2px;
-        text-shadow: none !important;
-    }
-    
-    .stMarkdown a:hover {
-        color: #333333 !important;
-    }
-
-    /* ============================================================
-       BLOCKQUOTE / STREAMLIT DEFAULT OVERRIDES - DARK
-       ============================================================ */
-    
-    .st-emotion-cache-1r6slb0 {
-        background: rgba(0,0,0,0.95) !important;
-    }
-    
-    [data-testid="stHeader"] {
-        background: rgba(0,0,0,0.95) !important;
-    }
-    
-    .st-emotion-cache-12fmjuu {
-        background: rgba(0,0,0,0.95) !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Initialize session state
-def init_session_state():
-    """Initialize all session state variables"""
-    if 'messages' not in st.session_state:
-        st.session_state.messages = []
-    if 'vectorstore' not in st.session_state:
-        st.session_state.vectorstore = None
-    if 'documents_loaded' not in st.session_state:
-        st.session_state.documents_loaded = False
-    if 'document_count' not in st.session_state:
-        st.session_state.document_count = 0
-    if 'chunk_count' not in st.session_state:
-        st.session_state.chunk_count = 0
-    if 'processed_documents' not in st.session_state:
-        st.session_state.processed_documents = []
-
-# Initialize components
-@st.cache_resource
-def init_components():
-    """Initialize all components (cached for performance)"""
-    return {
-        'document_processor': DocumentProcessor(),
-        'router_agent': RouterAgent(),
-        'web_fallback': WebFallback(max_results=5),
-        'answer_generator': AnswerGenerator(),
-        'hybrid_search': HybridSearch()
-    }
-
-# Main UI
-def main():
-    """Main application"""
-    
-    # Initialize
-    init_session_state()
-    components = init_components()
-    
-    # Header - Gear icon STRAIGHT, Title ITALIC
-    st.markdown(
+    def __init__(self, corpus: List[List[str]], k1: float = 1.5, b: float = 0.75):
         """
-        <div class="main-header">
-            <span class="gear-icon">⚙️</span>
-            <span class="title-text">RAG-WebFallback</span>
-        </div>
-        """, 
-        unsafe_allow_html=True
-    )
-    st.markdown('<div class="sub-header">Multi-Agent RAG System with Web Fallback • Source Tracking • Confidence Scoring</div>', unsafe_allow_html=True)
+        Initialize BM25 with a corpus of tokenized documents.
+        
+        Args:
+            corpus: List of tokenized documents (list of lists of tokens)
+            k1: BM25 parameter (default 1.5)
+            b: BM25 parameter (default 0.75)
+        """
+        self.k1 = k1
+        self.b = b
+        self.corpus = corpus
+        self.doc_count = len(corpus)
+        self.doc_lengths = [len(doc) for doc in corpus]
+        self.avg_doc_length = sum(self.doc_lengths) / self.doc_count if self.doc_count > 0 else 0
+        
+        # Calculate term frequencies across documents (IDF)
+        self.idf = {}
+        doc_freq = Counter()
+        for doc in corpus:
+            unique_terms = set(doc)
+            for term in unique_terms:
+                doc_freq[term] += 1
+        
+        for term, freq in doc_freq.items():
+            self.idf[term] = math.log((self.doc_count - freq + 0.5) / (freq + 0.5) + 1.0)
+        
+        # Pre-compute document term frequencies for speed
+        self.doc_term_freqs = [Counter(doc) for doc in corpus]
     
-    # Sidebar
-    with st.sidebar:
-        st.header("📄 Document Upload")
-        
-        # File uploader
-        uploaded_files = st.file_uploader(
-            "Upload PDF, TXT, DOCX, or CSV files",
-            type=['pdf', 'txt', 'docx', 'csv'],
-            accept_multiple_files=True,
-            help="Upload multiple documents for the RAG system to process"
-        )
-        
-        # Process button
-        if uploaded_files:
-            if st.button("🔄 Process Documents", type="primary"):
-                with st.spinner("Processing documents..."):
-                    try:
-                        all_chunks = components['document_processor'].process_multiple_files(uploaded_files)
-                        
-                        if all_chunks:
-                            # Build hybrid search index
-                            success = components['hybrid_search'].build_index(all_chunks)
-                            
-                            if success:
-                                st.session_state.vectorstore = components['hybrid_search']
-                                st.session_state.documents_loaded = True
-                                st.session_state.document_count = len(uploaded_files)
-                                st.session_state.chunk_count = len(all_chunks)
-                                st.session_state.processed_documents = [f.name for f in uploaded_files]
-                                
-                                st.success(f"✅ Processed {len(uploaded_files)} files with {len(all_chunks)} chunks!")
-                            else:
-                                st.error("❌ Failed to build search index")
-                        else:
-                            st.warning("⚠️ No chunks created from uploaded files")
-                            
-                    except Exception as e:
-                        st.error(f"❌ Error processing documents: {str(e)}")
-        
-        # Document status
-        st.divider()
-        st.subheader("📊 System Status")
-        
-        if st.session_state.documents_loaded:
-            st.success(f"✅ {st.session_state.document_count} documents loaded")
-            st.info(f"📑 {st.session_state.chunk_count} total chunks")
+    def get_scores(self, query_tokens: List[str]) -> List[float]:
+        """Get BM25 scores for a query against all documents."""
+        scores = []
+        for doc_idx in range(self.doc_count):
+            score = 0.0
+            doc_term_freq = self.doc_term_freqs[doc_idx]
+            doc_len = self.doc_lengths[doc_idx]
             
-            # Show processed files
-            with st.expander("📂 Processed Files"):
-                for doc in st.session_state.processed_documents:
-                    st.write(f"• {doc}")
-        else:
-            st.warning("⚠️ No documents loaded")
+            for term in query_tokens:
+                if term not in self.idf:
+                    continue
+                idf = self.idf[term]
+                tf = doc_term_freq.get(term, 0)
+                if tf == 0:
+                    continue
+                numerator = tf * (self.k1 + 1)
+                denominator = tf + self.k1 * (1 - self.b + self.b * doc_len / self.avg_doc_length)
+                score += idf * (numerator / denominator)
+            
+            scores.append(score)
         
-        # Router status
-        st.divider()
-        st.subheader("🤖 Router Status")
-        st.info("Smart routing between documents and web")
-        
-        # Clear chat button
-        st.divider()
-        if st.button("🗑️ Clear Chat", use_container_width=True):
-            st.session_state.messages = []
-            st.rerun()
-        
-        # Version
-        st.divider()
-        st.caption("v1.0.0 • Built with Streamlit + Groq + FAISS")
+        return scores
 
-    # Main chat area
-    chat_container = st.container()
-    
-    # Display chat history
-    with chat_container:
-        for message in st.session_state.messages:
-            with st.chat_message(message['role']):
-                st.markdown(message['content'])
-                
-                # Show sources if available
-                if 'sources' in message and message['sources']:
-                    with st.expander(f"📚 View Sources ({len(message['sources'])})"):
-                        for i, source in enumerate(message['sources'], 1):
-                            source_type = source.get('source_type', 'unknown').capitalize()
-                            source_name = source.get('source', source.get('title', 'Unknown'))
-                            confidence = source.get('confidence', source.get('relevance', 0))
-                            
-                            # Confidence color
-                            if confidence > 0.7:
-                                conf_class = "confidence-high"
-                            elif confidence > 0.4:
-                                conf_class = "confidence-medium"
-                            else:
-                                conf_class = "confidence-low"
-                            
-                            st.markdown(f"""
-                            <div class="source-box">
-                                <b>Source {i}</b> ({source_type}) - 
-                                <span class="{conf_class}">Confidence: {confidence:.2%}</span><br>
-                                <span style="font-size:0.85rem; color:#333333;">{source_name}</span>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            # Show content preview
-                            content = source.get('content', '')[:200]
-                            if content:
-                                st.caption(f"📝 {content}...")
-                            
-                            if source.get('url'):
-                                st.write(f"🔗 [Link]({source['url']})")
-    
-    # Chat input
-    if prompt := st.chat_input("Ask a question about your documents or current events..."):
-        # Add user message
-        st.session_state.messages.append({'role': 'user', 'content': prompt})
-        
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        # Generate response
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                try:
-                    # 1. Route the query
-                    has_docs = st.session_state.documents_loaded
-                    router_decision = components['router_agent'].get_route_decision(prompt, has_docs)
-                    
-                    # 2. Get results based on route
-                    sources = []
-                    context = ""
-                    used_web = False
-                    used_docs = False
-                    
-                    # First, try documents if available
-                    if has_docs:
-                        search_results = components['hybrid_search'].search_with_context(prompt, k=5)
-                        doc_sources = search_results.get('sources', [])
-                        
-                        # Check if document results are actually relevant
-                        doc_results = search_results.get('results', [])
-                        should_use_web = components['router_agent'].should_use_web_based_on_results(
-                            prompt, 
-                            doc_results,
-                            has_docs
-                        )
-                        
-                        # Check if documents have any relevant content
-                        has_relevant_docs = False
-                        if doc_sources:
-                            for src in doc_sources[:3]:
-                                if src.get('confidence', 0) > 0.5:
-                                    has_relevant_docs = True
-                                    break
-                        
-                        if doc_sources and not should_use_web and has_relevant_docs:
-                            # Document results are good - use them
-                            sources.extend(doc_sources)
-                            context = search_results.get('context', '')
-                            used_docs = True
-                            print(f"📚 Using {len(sources)} document sources")
-                        else:
-                            # Document results are not relevant - use web
-                            print("📚 Document results not relevant, using web search")
-                            web_results = components['web_fallback'].search_with_sources(prompt, max_results=5)
-                            if web_results['sources']:
-                                sources.extend(web_results['sources'])
-                                context = web_results['context']
-                                used_web = True
-                                print(f"🌐 Using {len(sources)} web sources")
-                    
-                    # If no sources found yet, try web as final fallback
-                    if not sources:
-                        print("🌐 No relevant documents, using web search")
-                        web_results = components['web_fallback'].search_with_sources(prompt, max_results=5)
-                        if web_results['sources']:
-                            sources.extend(web_results['sources'])
-                            context = web_results['context']
-                            used_web = True
-                            print(f"🌐 Using {len(sources)} web sources")
-                    
-                    # If STILL no sources, try a more general web search
-                    if not sources:
-                        print("🌐 Trying general web search...")
-                        web_results = components['web_fallback'].search_with_sources(prompt, max_results=3)
-                        if web_results['sources']:
-                            sources.extend(web_results['sources'])
-                            context = web_results['context']
-                            used_web = True
-                            print(f"🌐 Using {len(sources)} web sources (general search)")
-                    
-                    # 3. Generate answer
-                    if sources and context:
-                        answer_result = components['answer_generator'].generate_answer(prompt, context, sources)
-                        answer = answer_result['answer']
-                        cited_sources = answer_result.get('cited_sources', sources)
-                    else:
-                        answer = "I couldn't find relevant information to answer your question. Please try rephrasing or upload more documents."
-                        cited_sources = []
-                    
-                    # 4. Display answer
-                    st.markdown(answer)
-                    
-                    # Display route info
-                    with st.expander("🤔 Routing Decision"):
-                        st.write(f"**Route:** {router_decision['route'].upper()}")
-                        st.write(f"**Confidence:** {router_decision['confidence']:.2%}")
-                        st.write(f"**Reasoning:** {router_decision['reasoning']}")
-                        if router_decision['keywords_matched']:
-                            st.write(f"**Keywords matched:** {', '.join(router_decision['keywords_matched'])}")
-                        if used_web:
-                            st.write("**🌐 Web search was used** (documents didn't have relevant info)")
-                        elif used_docs and sources:
-                            st.write("**📚 Used documents** (found relevant information)")
-                        elif not sources:
-                            st.write("**⚠️ No sources found** (try rephrasing your question)")
-                    
-                    # Display sources
-                    if cited_sources:
-                        with st.expander(f"📚 View Sources ({len(cited_sources)})"):
-                            for i, source in enumerate(cited_sources, 1):
-                                source_type = source.get('source_type', 'unknown').capitalize()
-                                source_name = source.get('source', source.get('title', 'Unknown'))
-                                confidence = source.get('confidence', source.get('relevance', 0))
-                                content = source.get('content', '')[:300]
-                                
-                                st.markdown(f"""
-                                <div class="source-box">
-                                    <b>Source {i}</b> ({source_type}) - 
-                                    Confidence: {confidence:.2%}<br>
-                                    <span style="font-size:0.85rem; color:#333333;">{source_name}</span>
-                                </div>
-                                """, unsafe_allow_html=True)
-                                st.caption(f"📝 {content}...")
-                                if source.get('url'):
-                                    st.write(f"🔗 [Link]({source['url']})")
-                    
-                except Exception as e:
-                    st.error(f"❌ Error generating response: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
-                    answer = f"I encountered an error while processing your question. Please try again."
-                    st.markdown(answer)
-        
-        # Save to chat history
-        st.session_state.messages.append({
-            'role': 'assistant',
-            'content': answer,
-            'sources': cited_sources
+
+# ==============================================================================
+# API KEY / CLIENT
+# ==============================================================================
+def get_api_key() -> Optional[str]:
+    try:
+        if "GEMINI_API_KEY" in st.secrets:
+            return st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        pass
+    return os.getenv("GEMINI_API_KEY")
+
+
+def get_client() -> Optional[genai.Client]:
+    if st.session_state.get("client") is not None:
+        return st.session_state.client
+    api_key = get_api_key()
+    if not api_key:
+        return None
+    try:
+        client = genai.Client(api_key=api_key)
+        st.session_state.client = client
+        return client
+    except Exception as e:
+        logger.error(f"Failed to initialize Gemini client: {e}")
+        return None
+
+
+# ==============================================================================
+# EMBEDDINGS (Gemini, PyTorch-free)
+# ==============================================================================
+class GeminiEmbeddings:
+    """Thin wrapper around the Gemini embedding API with basic retry logic."""
+
+    def __init__(self, client: genai.Client, model: str = EMBED_MODEL):
+        self.client = client
+        self.model = model
+
+    def _embed_one(self, text: str, task_type: str, max_retries: int = 3) -> List[float]:
+        last_err = None
+        for attempt in range(max_retries):
+            try:
+                resp = self.client.models.embed_content(
+                    model=self.model,
+                    contents=text,
+                    config=types.EmbedContentConfig(task_type=task_type),
+                )
+                return resp.embeddings[0].values
+            except Exception as e:
+                last_err = e
+                logger.warning(f"Embedding attempt {attempt + 1}/{max_retries} failed: {e}")
+                time.sleep(1.5 * (attempt + 1))
+        raise RuntimeError(f"Embedding failed after {max_retries} attempts: {last_err}")
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        return [self._embed_one(t, "RETRIEVAL_DOCUMENT") for t in texts]
+
+    def embed_query(self, text: str) -> List[float]:
+        return self._embed_one(text, "RETRIEVAL_QUERY")
+
+
+# ==============================================================================
+# DOCUMENT LOADING
+# ==============================================================================
+def load_pdf(file) -> str:
+    reader = pypdf.PdfReader(file)
+    pages_text = []
+    for i, page in enumerate(reader.pages):
+        try:
+            pages_text.append(page.extract_text() or "")
+        except Exception as e:
+            logger.warning(f"Failed to extract text from PDF page {i}: {e}")
+    return "\n".join(pages_text)
+
+
+def load_docx(file) -> str:
+    document = docx.Document(file)
+    parts = [p.text for p in document.paragraphs if p.text.strip()]
+    for table in document.tables:
+        for row in table.rows:
+            parts.append(" | ".join(cell.text for cell in row.cells))
+    return "\n".join(parts)
+
+
+def load_txt(file) -> str:
+    raw = file.read()
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", errors="ignore")
+    return raw
+
+
+def load_csv(file) -> str:
+    df = pd.read_csv(file)
+    return df.to_string(index=False)
+
+
+def parse_uploaded_file(file) -> Tuple[str, str]:
+    ext = file.name.split(".")[-1].lower()
+    if ext == "pdf":
+        return load_pdf(file), ext
+    elif ext == "docx":
+        return load_docx(file), ext
+    elif ext == "txt":
+        return load_txt(file), ext
+    elif ext == "csv":
+        return load_csv(file), ext
+    else:
+        raise ValueError(f"Unsupported file type: .{ext}")
+
+
+# ==============================================================================
+# CHUNKING
+# ==============================================================================
+def chunk_document(text: str, filename: str, filetype: str) -> List[Dict]:
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE_TOKENS * CHARS_PER_TOKEN,
+        chunk_overlap=CHUNK_OVERLAP_TOKENS * CHARS_PER_TOKEN,
+        separators=["\n\n", "\n", ". ", ""],
+    )
+    raw_chunks = splitter.split_text(text)
+    docs = []
+    for i, chunk in enumerate(raw_chunks):
+        if not chunk.strip():
+            continue
+        docs.append({
+            "id": f"{filename}::chunk_{i}",
+            "text": chunk.strip(),
+            "metadata": {
+                "filename": filename,
+                "filetype": filetype,
+                "chunk_index": i,
+            },
         })
+    return docs
+
+
+# ==============================================================================
+# HYBRID VECTOR STORE (scikit-learn NearestNeighbors + Pure BM25)
+# ==============================================================================
+class HybridVectorStore:
+    def __init__(self, embeddings: GeminiEmbeddings):
+        self.embeddings = embeddings
+        self.nn: Optional[NearestNeighbors] = None
+        self.vectors: Optional[np.ndarray] = None
+        self.chunks: List[Dict] = []
+        self.bm25: Optional[PureBM25] = None
+
+    @staticmethod
+    def _tokenize(text: str) -> List[str]:
+        return re.findall(r"\w+", text.lower())
+
+    def is_ready(self) -> bool:
+        return self.nn is not None and len(self.chunks) > 0
+
+    def add_documents(self, docs: List[Dict]) -> None:
+        if not docs:
+            return
+        texts = [d["text"] for d in docs]
+        vectors = self.embeddings.embed_documents(texts)
+        arr = np.array(vectors, dtype="float32")
+        
+        # Normalize vectors for cosine similarity
+        norms = np.linalg.norm(arr, axis=1, keepdims=True)
+        arr = arr / norms
+
+        if self.nn is None:
+            self.nn = NearestNeighbors(n_neighbors=min(10, len(arr)), metric='cosine')
+            self.vectors = arr
+        else:
+            self.vectors = np.vstack([self.vectors, arr])
+        
+        self.nn.fit(self.vectors)
+        self.chunks.extend(docs)
+
+        # Rebuild BM25 over the full corpus using pure Python BM25
+        tokenized_corpus = [self._tokenize(c["text"]) for c in self.chunks]
+        self.bm25 = PureBM25(tokenized_corpus)
+
+    def search(self, query: str, top_k: int = TOP_K_DOCS) -> List[Dict]:
+        if not self.is_ready():
+            return []
+
+        # --- Semantic (cosine similarity via NearestNeighbors) ---
+        q_vec = np.array([self.embeddings.embed_query(query)], dtype="float32")
+        # Normalize query vector
+        q_norm = np.linalg.norm(q_vec)
+        if q_norm > 0:
+            q_vec = q_vec / q_norm
+        
+        k = min(top_k * 3, len(self.chunks))
+        distances, indices = self.nn.kneighbors(q_vec, n_neighbors=k)
+        
+        # Convert distances to similarity scores (cosine)
+        sem_map: Dict[int, float] = {}
+        for dist, idx in zip(distances[0], indices[0]):
+            if idx >= len(self.chunks):
+                continue
+            similarity = 1.0 - dist
+            sem_map[int(idx)] = float(similarity)
+
+        # --- Keyword (Pure BM25) ---
+        bm25_scores = self.bm25.get_scores(self._tokenize(query))
+        max_bm25 = max(bm25_scores) if len(bm25_scores) and max(bm25_scores) > 0 else 1.0
+        kw_map = {i: float(s) / max_bm25 for i, s in enumerate(bm25_scores)}
+
+        # --- Weighted combination ---
+        all_idx = set(sem_map.keys()) | set(kw_map.keys())
+        results = []
+        for idx in all_idx:
+            sem_s = sem_map.get(idx, 0.0)
+            kw_s = kw_map.get(idx, 0.0)
+            combined = SEMANTIC_WEIGHT * sem_s + KEYWORD_WEIGHT * kw_s
+            chunk = self.chunks[idx]
+            results.append({
+                "text": chunk["text"],
+                "metadata": chunk["metadata"],
+                "semantic_score": sem_s,
+                "keyword_score": kw_s,
+                "confidence": combined,
+            })
+
+        results.sort(key=lambda r: r["confidence"], reverse=True)
+        return results[:top_k]
+
+
+# ==============================================================================
+# ROUTER AGENT
+# ==============================================================================
+@dataclass
+class RouteDecision:
+    route: str          # "documents" | "web" | "both"
+    confidence: float   # 0.0 - 1.0
+    reason: str
+
+
+def router_agent(query: str, docs_ready: bool) -> RouteDecision:
+    q_lower = query.lower()
+    matched = [kw for kw in TIME_SENSITIVE_KEYWORDS if kw in q_lower]
+
+    if not docs_ready:
+        return RouteDecision(
+            route="web",
+            confidence=0.90,
+            reason="No documents indexed yet; routing straight to web search.",
+        )
+
+    if matched:
+        confidence = min(0.60 + 0.10 * len(matched), 0.95)
+        return RouteDecision(
+            route="both",
+            confidence=confidence,
+            reason=f"Time-sensitive keyword(s) detected: {', '.join(matched)}. "
+                   f"Checking both documents and the web.",
+        )
+
+    return RouteDecision(
+        route="documents",
+        confidence=0.75,
+        reason="No time-sensitive keywords found; answering from indexed documents.",
+    )
+
+
+# ==============================================================================
+# WEB FALLBACK (DuckDuckGo)
+# ==============================================================================
+def web_search(query: str, max_results: int = WEB_MAX_RESULTS) -> List[Dict]:
+    results = []
+    try:
+        with DDGS() as ddgs:
+            hits = list(ddgs.text(query, max_results=max_results))
+        n = max(len(hits), 1)
+        for rank, hit in enumerate(hits):
+            relevance = max(0.05, 1.0 - (rank / n) * 0.8)
+            results.append({
+                "title": hit.get("title", "Untitled"),
+                "text": hit.get("body", ""),
+                "url": hit.get("href", ""),
+                "confidence": relevance,
+            })
+    except Exception as e:
+        logger.error(f"Web search failed: {e}")
+        st.warning(f"⚠️ Web search failed: {e}")
+    return results
+
+
+# ==============================================================================
+# ANSWER GENERATION
+# ==============================================================================
+def build_context(doc_results: List[Dict], web_results: List[Dict]) -> Tuple[str, List[Dict]]:
+    sources = []
+    context_parts = []
+    idx = 1
+
+    for r in doc_results:
+        label = f"Source {idx}"
+        meta = r["metadata"]
+        context_parts.append(
+            f"[{label}] (Document: {meta['filename']}, confidence: {r['confidence']:.0%})\n{r['text']}"
+        )
+        sources.append({
+            "label": label,
+            "type": "document",
+            "confidence": r["confidence"],
+            "filename": meta["filename"],
+            "text": r["text"][:600],
+        })
+        idx += 1
+
+    for r in web_results:
+        label = f"Source {idx}"
+        context_parts.append(
+            f"[{label}] (Web: {r['title']} — {r['url']}, confidence: {r['confidence']:.0%})\n{r['text']}"
+        )
+        sources.append({
+            "label": label,
+            "type": "web",
+            "confidence": r["confidence"],
+            "title": r["title"],
+            "url": r["url"],
+            "text": r["text"][:600],
+        })
+        idx += 1
+
+    return "\n\n".join(context_parts), sources
+
+
+def generate_answer(client: genai.Client, query: str, context: str) -> str:
+    if not context.strip():
+        prompt = (
+            f"{SYSTEM_PROMPT}\n\n"
+            "No sources were retrieved for this question. Tell the user honestly "
+            "that no relevant documents or web results were found, and only answer "
+            "from general knowledge if you clearly label it as such (no citations).\n\n"
+            f"Question: {query}"
+        )
+    else:
+        prompt = (
+            f"{SYSTEM_PROMPT}\n\nSOURCES:\n{context}\n\n"
+            f"QUESTION: {query}\n\nANSWER (with [Source X] citations):"
+        )
+
+    try:
+        resp = client.models.generate_content(model=GEN_MODEL, contents=prompt)
+        return resp.text or "⚠️ The model returned an empty response."
+    except Exception as e:
+        logger.error(f"Answer generation failed: {e}")
+        return f"⚠️ Error generating answer: {e}"
+
+
+# ==============================================================================
+# STREAMLIT APP
+# ==============================================================================
+def init_session_state():
+    defaults = {
+        "chat_history": [],
+        "vector_store": None,
+        "indexed_files": [],
+        "client": None,
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+
+def process_uploaded_files(files, client: genai.Client) -> int:
+    if st.session_state.vector_store is None:
+        st.session_state.vector_store = HybridVectorStore(GeminiEmbeddings(client))
+
+    all_docs = []
+    for f in files:
+        if f.name in st.session_state.indexed_files:
+            continue
+        try:
+            text, ext = parse_uploaded_file(f)
+            if not text.strip():
+                st.warning(f"No extractable text found in {f.name}; skipping.")
+                continue
+            docs = chunk_document(text, f.name, ext)
+            all_docs.extend(docs)
+            st.session_state.indexed_files.append(f.name)
+        except Exception as e:
+            logger.exception(f"Failed to process {f.name}")
+            st.error(f"Failed to process {f.name}: {e}")
+
+    if all_docs:
+        with st.spinner(f"Embedding {len(all_docs)} chunks with Gemini..."):
+            try:
+                st.session_state.vector_store.add_documents(all_docs)
+            except Exception as e:
+                logger.exception("Failed to build index")
+                st.error(f"Failed to build index: {e}")
+                return 0
+    return len(all_docs)
+
+
+def render_sources(sources: List[Dict]):
+    with st.expander(f"📚 Sources ({len(sources)})"):
+        for s in sources:
+            icon = "📄" if s["type"] == "document" else "🌐"
+            header = f"{icon} **{s['label']}** — confidence {s['confidence']:.0%}"
+            if s["type"] == "document":
+                header += f" — *{s['filename']}*"
+            else:
+                header += f" — [{s['title']}]({s['url']})"
+            st.markdown(header)
+            st.caption(s["text"])
+            st.markdown("---")
+
+
+def main():
+    st.set_page_config(page_title=APP_TITLE, page_icon="🔎", layout="wide")
+    init_session_state()
+
+    st.title("🔎 " + APP_TITLE)
+    st.caption(
+        "Hybrid document RAG (scikit-learn NearestNeighbors + BM25) with an automatic web-search "
+        "fallback, powered by Google Gemini."
+    )
+
+    client = get_client()
+
+    # ---------------------------------------------------------------- Sidebar
+    with st.sidebar:
+        st.header("⚙️ System Status")
+        if client:
+            st.success("Gemini API connected")
+        else:
+            st.error("Gemini API key not set")
+            st.info(
+                "Set `GEMINI_API_KEY` as an environment variable, in a `.env` "
+                "file, or in `.streamlit/secrets.toml`."
+            )
+
+        vs: Optional[HybridVectorStore] = st.session_state.vector_store
+        n_chunks = len(vs.chunks) if vs else 0
+        col1, col2 = st.columns(2)
+        col1.metric("Indexed chunks", n_chunks)
+        col2.metric("Indexed files", len(st.session_state.indexed_files))
+
+        if st.session_state.indexed_files:
+            with st.expander("Indexed files"):
+                for fn in st.session_state.indexed_files:
+                    st.write(f"- {fn}")
+
+        st.divider()
+        st.header("📄 Upload Documents")
+        uploaded = st.file_uploader(
+            "PDF, TXT, DOCX, CSV",
+            type=["pdf", "txt", "docx", "csv"],
+            accept_multiple_files=True,
+        )
+        if st.button("Process documents", type="primary", use_container_width=True, disabled=not uploaded):
+            if not client:
+                st.error("Cannot process documents without a valid Gemini API key.")
+            else:
+                added = process_uploaded_files(uploaded, client)
+                if added:
+                    st.success(f"Indexed {added} new chunk(s).")
+                else:
+                    st.info("No new chunks added (already indexed, empty, or failed).")
+
+        st.divider()
+        with st.expander("Advanced settings"):
+            st.write(f"Chunk size: ~{CHUNK_SIZE_TOKENS} tokens, overlap: {CHUNK_OVERLAP_TOKENS} tokens")
+            st.write(f"Semantic weight: {SEMANTIC_WEIGHT} · Keyword weight: {KEYWORD_WEIGHT}")
+            st.write(f"Generation model: `{GEN_MODEL}`")
+            st.write(f"Embedding model: `{EMBED_MODEL}`")
+            c1, c2 = st.columns(2)
+            if c1.button("Clear chat", use_container_width=True):
+                st.session_state.chat_history = []
+                st.rerun()
+            if c2.button("Reset KB", use_container_width=True):
+                st.session_state.vector_store = None
+                st.session_state.indexed_files = []
+                st.rerun()
+
+    # ------------------------------------------------------------- Chat history
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            if msg["role"] == "assistant" and msg.get("route_info"):
+                ri = msg["route_info"]
+                st.caption(f"🧭 Route: **{ri['route']}** ({ri['confidence']:.0%} confidence) — {ri['reason']}")
+            if msg.get("sources"):
+                render_sources(msg["sources"])
+
+    # ------------------------------------------------------------------- Input
+    query = st.chat_input("Ask a question...")
+    if query:
+        if not client:
+            st.error("Please configure `GEMINI_API_KEY` before asking questions.")
+            st.stop()
+
+        st.session_state.chat_history.append({"role": "user", "content": query})
+        with st.chat_message("user"):
+            st.markdown(query)
+
+        with st.chat_message("assistant"):
+            vs = st.session_state.vector_store
+            docs_ready = vs.is_ready() if vs else False
+            decision = router_agent(query, docs_ready)
+            st.caption(f"🧭 Route: **{decision.route}** ({decision.confidence:.0%} confidence) — {decision.reason}")
+
+            doc_results: List[Dict] = []
+            web_results: List[Dict] = []
+
+            if decision.route in ("documents", "both") and docs_ready:
+                with st.spinner("Searching documents (hybrid nearest-neighbors + BM25)..."):
+                    try:
+                        doc_results = vs.search(query, top_k=TOP_K_DOCS)
+                    except Exception as e:
+                        logger.exception("Document search failed")
+                        st.warning(f"Document search failed: {e}")
+
+            if decision.route in ("web", "both"):
+                with st.spinner("Searching the web (DuckDuckGo)..."):
+                    web_results = web_search(query)
+
+            context, sources = build_context(doc_results, web_results)
+
+            with st.spinner("Generating answer with Gemini..."):
+                answer = generate_answer(client, query, context)
+
+            st.markdown(answer)
+            if sources:
+                render_sources(sources)
+
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": answer,
+                "route_info": {
+                    "route": decision.route,
+                    "confidence": decision.confidence,
+                    "reason": decision.reason,
+                },
+                "sources": sources,
+            })
+
 
 if __name__ == "__main__":
     main()
