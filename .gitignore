@@ -5,4 +5,4 @@ __pycache__/
 data/
 *.log
 .DS_Store
-streamlit/
+streamlit/.env
