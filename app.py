@@ -282,7 +282,7 @@ st.markdown("""
     .main-header {
         font-size: 3.2rem;
         font-weight: 800;
-        color: #0a0a0a !important;
+        color: #979799 !important;
         letter-spacing: 2px;
         margin-bottom: 0.2rem;
         padding: 0.5rem 0;
@@ -317,11 +317,11 @@ st.markdown("""
     }
     
     .sub-header {
-        font-size: 1.1rem;
-        color: #1a1a1a !important;
+        font-size: 1.3rem;
+        color: #FF0000 !important;
         text-shadow: 0px 2px 8px rgba(0,0,0,0.3) !important;
         margin-bottom: 2rem;
-        opacity: 0.85;
+        opacity: 1;
         font-weight: 500;
     }
 
