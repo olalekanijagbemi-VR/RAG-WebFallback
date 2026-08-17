@@ -1,5 +1,5 @@
 """
-RAG-WebFallback - Main Application (FINAL - MERGED)
+RAG+WebFallback - Main Application (FINAL - MERGED)
 Multi-Agent RAG System with Web Fallback
 Apple Liquid Glass UI - Dark Bars - 3D Italic Title - Big Bold Input
 """
@@ -90,7 +90,7 @@ Rules:
 # APPLE LIQUID GLASS UI - DARK BARS - 3D ITALIC TITLE
 # ============================================================
 st.set_page_config(
-    page_title="RAG-WebFallback",
+    page_title="RAG+WebFallback",
     page_icon="⚙️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -1161,7 +1161,7 @@ def main():
         """
         <div class="main-header">
             <span class="gear-icon">⚙️</span>
-            <span class="title-text">RAG-WebFallback</span>
+            <span class="title-text">RAG+WebFallback</span>
         </div>
         """, 
         unsafe_allow_html=True
