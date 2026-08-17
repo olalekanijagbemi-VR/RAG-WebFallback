@@ -426,7 +426,7 @@ st.markdown("""
     
     .stChatInput input::placeholder {
         color: rgba(0, 0, 0, 0.35) !important;
-        opacity: 0.8;
+        opacity: 1;
         font-weight: 400;
         font-size: 1rem !important;
         text-shadow: none !important;
@@ -557,7 +557,7 @@ st.markdown("""
         -webkit-backdrop-filter: blur(8px) !important;
         border: 1px dashed rgba(255, 255, 255, 0.1) !important;
         border-radius: 0.75rem !important;
-        color: #0a0a0a !important;
+        color: #FF0000 !important;
     }
 
     /* ============================================================
